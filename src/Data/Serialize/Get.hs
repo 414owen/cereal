@@ -419,6 +419,7 @@ ensure' n0 = n0 `seq` Get $ \ s0 b0 m0 w0 kf ks -> let
                     in ks s b m0 w0 s
                 else getMore n' s0 ss b0 m0 w0 kf ks
 
+
 negativeIsolation :: Get a
 negativeIsolation = fail "Attempted to isolate a negative number of bytes"
 
@@ -467,10 +468,12 @@ isolateLazy :: Int -> Get a -> Get a
 isolateLazy n parser
   | n < 0 = negativeIsolation
   | n == 0 = isolate0 parser
-isolateLazy n parser = go . runGetPartial parser =<< getAtMost n
+isolateLazy n parser =  do
+  initialBytesRead <- bytesRead
+  go initialBytesRead 0 . runGetPartial parser =<< getAtMost n
   where
-    go :: Result a -> Get a
-    go r = case r of
+    go :: Int -> Int -> Result a -> Get a
+    go initialBytesRead m r = trace ("CEREAL outer go" ++ show m) $ case r of
       FailRaw (msg, stack) bs -> do
         !_ <- trace ("CEREAL: inner parser failed: " ++ show (msg, stack, bs)) <$> pure ()
         bytesRead >>= put bs >> failRaw msg stack
@@ -479,9 +482,11 @@ isolateLazy n parser = go . runGetPartial parser =<< getAtMost n
             bytesRead' <- bytesRead
             -- Technically this is both undersupply, and underparse
             -- buyt we use undersupply to match strict isolation
-            unless (bytesRead' == n) isolationUnderSupply
-            unless (B.null bs) isolationUnderParse
-            pure a
+            unless (bytesRead' - initialBytesRead == n)
+              $ trace (unwords ["CEREAL bytesRead", show $ bytesRead' - initialBytesRead, "n", show n]) isolationUnderSupply
+            unless (B.null bs)
+              $ trace "CEREAL null bs" isolationUnderSupply
+            trace "CEREAL isolateLazy returning successfully" $ pure a
       Partial cont -> do
         pos <- bytesRead
         bs <- getAtMost $ n - pos
@@ -491,8 +496,8 @@ isolateLazy n parser = go . runGetPartial parser =<< getAtMost n
         if B.null bs
           then case cont bs of
             Partial _ -> trace "CEREAL: inner partiality" isolationUnderSupply
-            a -> go a
-          else go $ cont bs
+            a -> go initialBytesRead (succ m) a
+          else go initialBytesRead (succ m) $ cont bs
 
 failRaw :: String -> [String] -> Get a
 failRaw msg stack = Get (\s0 b0 m0 _ kf _ -> kf s0 b0 m0 stack msg)
