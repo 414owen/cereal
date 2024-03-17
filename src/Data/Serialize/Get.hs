@@ -124,6 +124,7 @@ import qualified Data.Map                 as Map
 import qualified Data.Sequence            as Seq
 import qualified Data.Set                 as Set
 import qualified Data.Tree                as T
+import Debug.Trace
 
 #if defined(__GLASGOW_HASKELL__) && !defined(__HADDOCK__)
 import GHC.Base
@@ -487,7 +488,7 @@ isolateLazy n parser = go . runGetPartial parser =<< getAtMost n
         -- instead of recursing indefinitely
         if B.null bs
           then case cont bs of
-            Partial cont -> isolationUnderSupply
+            Partial _ -> trace "CEREAL: inner partiality" isolationUnderSupply
             a -> go a
           else go $ cont bs
 
