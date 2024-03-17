@@ -383,11 +383,13 @@ ensure n
 
 {-# INLINE ensure #-}
 ensure' :: Int -> Get B.ByteString
-ensure' n0 = n0 `seq` Get $ \ s0 b0 m0 w0 kf ks -> let
+ensure' n0 = do
+  res <- trace ("GET ensure' n0: " ++ show n0) $ n0 `seq` Get $ \ s0 b0 m0 w0 kf ks -> let
     n' = n0 - B.length s0
-    in if n' <= 0
+    in if trace ("GET ensure' n': " ++ show n') $ n' <= 0
         then ks s0 b0 m0 w0 s0
         else getMore n' s0 [] b0 m0 w0 kf ks
+  trace ("GET ensure result: " ++ show res) $ pure res
     where
         -- The "accumulate and concat" pattern here is important not to incur
         -- in quadratic behavior, see <https://github.com/GaloisInc/cereal/issues/48>
@@ -403,7 +405,7 @@ ensure' n0 = n0 `seq` Get $ \ s0 b0 m0 w0 kf ks -> let
                 Complete -> tooFewBytes
                 Incomplete mb -> Partial $ \s ->
                     if B.null s
-                        then tooFewBytes
+                        then trace ("GET ensure' incomplete null " ++ show (n0, s0)) tooFewBytes
                         else let
                             !mb' = case mb of
                                 Just l -> Just $! l - B.length s
@@ -412,7 +414,7 @@ ensure' n0 = n0 `seq` Get $ \ s0 b0 m0 w0 kf ks -> let
 
         checkIfEnough !n s0 ss b0 m0 w0 kf ks = let
             n' = n - B.length s0
-            in if n' <= 0
+            in if trace ("GET ensure' inner n': " ++ show n') $ n' <= 0
                 then let
                     !s = finalInput s0 ss
                     !b = finalBuffer b0 s0 ss
@@ -456,7 +458,10 @@ isolate n m
       return a
 
 getAtMost :: Int -> Get B.ByteString
+getAtMost 0 = pure mempty
 getAtMost n = do
+  !_ <- trace ("getAtMost " ++ show n) pure ()
+  _ <- ensure' 1
   (bs, rest) <- B.splitAt n <$> get
   curr <- bytesRead
   put rest (curr + B.length bs)
@@ -477,19 +482,19 @@ isolateLazy n parser =  do
       FailRaw (msg, stack) bs -> do
         !_ <- trace ("CEREAL: inner parser failed: " ++ show (msg, stack, bs)) <$> pure ()
         bytesRead >>= put bs >> failRaw msg stack
-      Done a bs
+      Done a _
         | otherwise -> do
             bytesRead' <- bytesRead
             -- Technically this is both undersupply, and underparse
             -- buyt we use undersupply to match strict isolation
             unless (bytesRead' - initialBytesRead == n)
               $ trace (unwords ["CEREAL bytesRead", show $ bytesRead' - initialBytesRead, "n", show n]) isolationUnderSupply
-            unless (B.null bs)
-              $ trace "CEREAL null bs" isolationUnderSupply
+            -- unless (B.null bs)
+            --   $ trace "CEREAL null bs" isolationUnderSupply
             trace "CEREAL isolateLazy returning successfully" $ pure a
       Partial cont -> do
         pos <- bytesRead
-        bs <- getAtMost $ n - pos
+        bs <- getAtMost $ n - (pos - initialBytesRead)
         -- We want to give the inner parser a chance to determine
         -- output, but if it returns a continuation, we'll throw
         -- instead of recursing indefinitely
@@ -614,7 +619,7 @@ getBytes n
           rest    = B.unsafeDrop n s
           -- (consume,rest) = B.splitAt n s
       cur <- bytesRead
-      put rest (cur + n)
+      trace ("GET getBytes putting back " ++ show rest) $ put rest (cur + n)
       return consume
 {-# INLINE getBytes #-}
 
