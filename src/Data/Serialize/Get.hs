@@ -471,7 +471,9 @@ isolateLazy n parser = go . runGetPartial parser =<< getAtMost n
   where
     go :: Result a -> Get a
     go r = case r of
-      FailRaw (msg, stack) bs -> bytesRead >>= put bs >> failRaw msg stack
+      FailRaw (msg, stack) bs -> do
+        !_ <- trace ("CEREAL: inner parser failed: " ++ show (msg, stack, bs)) <$> pure ()
+        bytesRead >>= put bs >> failRaw msg stack
       Done a bs
         | otherwise -> do
             bytesRead' <- bytesRead
