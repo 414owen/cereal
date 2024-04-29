@@ -422,10 +422,10 @@ negativeIsolation :: Get a
 negativeIsolation = fail "Attempted to isolate a negative number of bytes"
 
 isolationUnderParse :: Get a
-isolationUnderParse =  fail "not all bytes parsed in isolate"
+isolationUnderParse =  fail "Isolated parser didn't consume all input"
 
 isolationUnderSupply :: Get a
-isolationUnderSupply = failRaw "too few bytes" ["demandInput"]
+isolationUnderSupply = fail "Too few bytes supplied to isolated parser"
 
 isolate0 :: Get a -> Get a
 isolate0 parser = do
@@ -454,6 +454,7 @@ isolate n m
       return a
 
 getAtMost :: Int -> Get B.ByteString
+getAtMost 0 = pure mempty
 getAtMost n = do
   (bs, rest) <- B.splitAt n <$> ensure' 1
   curr <- bytesRead
@@ -468,19 +469,19 @@ isolateLazy n parser
   | n == 0 = isolate0 parser
 isolateLazy n parser = do
   initialBytesRead <- bytesRead
-  go initialBytesRead . runGetPartial parser =<< getAtMost n
+  bs <- getAtMost n
+  go initialBytesRead $ runGetPartial parser bs
   where
     go :: Int -> Result a -> Get a
     go initialBytesRead r = case r of
-      FailRaw (msg, stack) bs -> bytesRead >>= put bs >> failRaw msg stack
-      Done a bs
-        | otherwise -> do
-            bytesRead' <- bytesRead
-            -- Technically this matches both undersupply, and underparse
-            -- but we throw undersupply to match strict isolation
-            unless (bytesRead' - initialBytesRead == n) isolationUnderSupply
-            unless (B.null bs) isolationUnderParse
-            pure a
+      FailRaw (msg, stack) bs -> do
+        m <- bytesRead
+        put bs m
+        failRaw msg stack
+      Done a bs -> do
+        bytesRead' <- bytesRead
+        unless (bytesRead' - initialBytesRead == n && B.null bs) isolationUnderParse
+        pure a
       Partial cont -> do
         pos <- bytesRead
         bs <- getAtMost $ n - (pos - initialBytesRead)
@@ -489,7 +490,7 @@ isolateLazy n parser = do
         -- instead of recursing indefinitely
         if B.null bs
           then case cont bs of
-            Partial cont -> isolationUnderSupply
+            Partial _ -> isolationUnderSupply
             a -> go initialBytesRead a
           else go initialBytesRead $ cont bs
 

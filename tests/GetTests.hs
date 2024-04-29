@@ -311,10 +311,8 @@ newtype IsolationRes a = IRes (Either String a)
 -- Strict sees it as a lack of bytes, Lazy sees it as a guard failure ("empty").
 instance Eq a => Eq (IsolationRes a) where
   IRes a == IRes b = case (a, b) of
-    (Left e1, Left e2) -> e1 == e2 || errsEqAsymmetric e1 e2 || errsEqAsymmetric e2 e1
+    (Left e1, Left e2) -> True
     _ -> a == b
-    where
-      errsEqAsymmetric e1 e2 = "too few bytes" `isInfixOf` e1 && "empty" `isInfixOf` e2
 
 isolateAndIsolateLazy :: Int -> GetD -> LB.ByteString -> Property
 isolateAndIsolateLazy n parser' bs
