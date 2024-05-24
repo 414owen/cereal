@@ -471,22 +471,12 @@ isolateLazy n parser = do
         pure a
       Partial cont -> do
         pos <- bytesRead
-        -- Sometimes, the amount of bytes left in the isolated stream
-        -- will be zero (ie. `n - (pos - initialBytesRead) = 0`)
-        -- In this case we give the current continuation an empty
-        -- bytestring. We do this so that the inner parser can determine
-        -- the final result.
-        -- If, however, the inner parser returns another continuation,
-        -- then presumably it will keep doing so, for as long as we provide
-        -- it with empty chunks of input.
-        -- In this case, we throw our own error (`isolationUnderSupply`),
-        -- to avoid recurring indefinitely.
-        bs <- getAtMost $ n - (pos - initialBytesRead)
-        if B.null bs
-          then case cont bs of
-            Partial _ -> isolationUnderSupply
-            a -> go initialBytesRead a
-          else go initialBytesRead $ cont bs
+        let bytesLeft = n - (pos - initialBytesRead)
+        if bytesLeft == 0
+          then isolationUnderSupply
+          else do
+            bs <- getAtMost bytesLeft
+            go initialBytesRead $ cont bs
 
 failRaw :: String -> [String] -> Get a
 failRaw msg stack = Get (\s0 b0 m0 _ kf _ -> kf s0 b0 m0 stack msg)
