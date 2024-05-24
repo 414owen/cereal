@@ -15,11 +15,14 @@ import           Data.Serialize.Get
 import           Test.Framework (Test(),testGroup)
 import           Test.Framework.Providers.QuickCheck2 (testProperty)
 import           Test.Framework.Providers.HUnit (testCase)
-import           Test.HUnit (Assertion, (@=?), assertFailure)
+import           Test.HUnit (Assertion, (@=?), (@?=), assertFailure, (@?))
 import           Test.QuickCheck hiding (Result)
 import qualified Test.QuickCheck as QC
 import Data.List (isInfixOf)
 import Debug.Trace
+import Data.Either (isLeft)
+import Data.Bifunctor (bimap, Bifunctor (..))
+import Data.Functor (($>))
 
 
 -- Data to express Get parser to generate
@@ -338,6 +341,43 @@ isolateIsNotIncremental = go (runGetPartial parser $ BS.replicate 11 0)
       Fail failure _ -> assertFailure $ "Strict isolate was incremental: " <> failure
       Partial cont -> pure ()
 
+isolate0 :: Assertion
+isolate0 = do
+  runGet parseSucceed "hello" @?= Right (42, "hello")
+  first (const ()) (runGet parseFail "hello") @?= Left ()
+
+  where
+    parseSucceed :: Get (Int, BS.ByteString)
+    parseSucceed = do
+      a <- isolate 0 $ pure 42
+      b <- getByteString 5
+      pure (a, b)
+
+    parseFail :: Get (Word8, BS.ByteString)
+    parseFail = do
+      a <- isolate 0 getWord8
+      b <- getByteString 5
+      pure (a, b)
+
+isolate2 :: Assertion
+isolate2 = runGet parser "hello" @?= Right ("he", "llo")
+  where
+    parser :: Get (BS.ByteString, BS.ByteString)
+    parser = do
+      a <- isolate 2 $ getByteString 2
+      b <- getByteString 3
+      pure (a, b)
+
+testEnsure :: Assertion
+testEnsure = do
+  runGet parser "hello" @?= Right (replicate 3 "hello")
+  where
+    parser = do
+      a <- ensure 0
+      b <- ensure 2
+      c <- ensure 5
+      pure [a, b, c]
+
 -- Checks return values, leftovers, fails for continuations
 assertResultsMatch :: Eq a => Result a -> (Maybe a, BS.ByteString) -> Assertion
 assertResultsMatch r1 r2 = case (r1, r2) of
@@ -365,7 +405,7 @@ tests  = testGroup "GetTests"
   , testProperty "lazy   - monad assoc"            monadAssoc
   , testProperty "strict - monad assoc"            monadAssoc'
   , testProperty "strict lazy - equality"          eqStrictLazy
-  , testProperty "strict lazy - remaining equality"remainingStrictLazy
+  , testProperty "strict lazy - remaining equality" remainingStrictLazy
   , testProperty "lazy   - two eof"                eqEof
   , testProperty "strict - two eof"                eqEof'
   , testProperty "lazy   - alternative left Id"    alterIdL
@@ -377,6 +417,9 @@ tests  = testGroup "GetTests"
   , testProperty "lazy   - alternative distr"      alterDistr
   , testProperty "strict - alternative distr"      alterDistr'
   , testCase     "isolate is not incremental"      isolateIsNotIncremental
+  , testCase     "ensure"                          testEnsure
+  , testCase     "isolate 0"                       isolate0
+  , testCase     "isolate 2"                       isolate2
   , testCase     "isolateLazy is incremental"      isolateLazyIsIncremental
   , testProperty "isolations are equivalent"       isolateAndIsolateLazy
   , testCase     "isolateLazy determines leftovers" isolateLazyDeterminesLeftovers

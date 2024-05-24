@@ -377,7 +377,6 @@ runGetLazyState m lstr = case runGetLazy' m lstr of
 ensure :: Int -> Get B.ByteString
 ensure n
   | n < 0 = fail "Attempted to ensure negative amount of bytes"
-  | n == 0 = pure mempty
   | otherwise = ensure' n
 
 {-# INLINE ensure #-}
@@ -427,21 +426,11 @@ isolationUnderParse =  fail "Isolated parser didn't consume all input"
 isolationUnderSupply :: Get a
 isolationUnderSupply = fail "Too few bytes supplied to isolated parser"
 
-isolate0 :: Get a -> Get a
-isolate0 parser = do
-  rest <- get
-  cur <- bytesRead
-  put mempty cur
-  a    <- parser
-  put rest cur
-  pure a
-
 -- | Isolate an action to operating within a fixed block of bytes.  The action
 --   is required to consume all the bytes that it is isolated to.
 isolate :: Int -> Get a -> Get a
 isolate n m
   | n < 0 = negativeIsolation
-  | n == 0 = isolate0 m
   | otherwise = do
       s <- ensure' n
       let (s',rest) = B.splitAt n s
@@ -464,9 +453,7 @@ getAtMost n = do
 -- | An incremental version of 'isolate', which doesn't try to read the input
 --   into a buffer all at once.
 isolateLazy :: Int -> Get a -> Get a
-isolateLazy n parser
-  | n < 0 = negativeIsolation
-  | n == 0 = isolate0 parser
+isolateLazy n _ | n < 0 = negativeIsolation
 isolateLazy n parser = do
   initialBytesRead <- bytesRead
   bs <- getAtMost n
@@ -609,7 +596,6 @@ getShortByteString n = do
 getBytes :: Int -> Get B.ByteString
 getBytes n
   | n < 0 = fail "getBytes: negative length requested"
-  | n == 0 = pure mempty
   | otherwise = do
       s <- ensure' n
       let consume = B.unsafeTake n s
