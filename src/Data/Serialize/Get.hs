@@ -421,7 +421,7 @@ negativeIsolation :: Get a
 negativeIsolation = fail "Attempted to isolate a negative number of bytes"
 
 isolationUnderParse :: Get a
-isolationUnderParse =  fail "Isolated parser didn't consume all input"
+isolationUnderParse = fail "Isolated parser didn't consume all input"
 
 isolationUnderSupply :: Get a
 isolationUnderSupply = fail "Too few bytes supplied to isolated parser"
@@ -467,7 +467,11 @@ isolateLazy n parser = do
         failRaw msg stack
       Done a bs -> do
         bytesRead' <- bytesRead
-        unless (bytesRead' - initialBytesRead == n && B.null bs) isolationUnderParse
+        unless (bytesRead' - initialBytesRead == n && B.null bs)
+          $ fail $ "Isolated parser didn't consume all input. "
+            <> "Internal leftovers: " <> show bs
+            <> ", bytesRead: " <> show (bytesRead' - initialBytesRead)
+            <> ", isolation amt: " <> show n
         pure a
       Partial cont -> do
         pos <- bytesRead
